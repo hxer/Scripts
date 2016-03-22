@@ -1,2 +1,2 @@
-# NetworkScript
-some script about network
+# Scripts
+some scripts
