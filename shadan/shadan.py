@@ -238,11 +238,11 @@ if __name__ == "__main__":
         pages = 1000000
 
     for page in xrange(1, pages+1):
-        print("[*] save page {} to file ...".format(page))
         result = s.search(keyword, page)
         if result == None :
             break
 
+        print("[*] save page {} to file ...".format(page))
         s.savefile(keyword+'.txt', result)
 
         if exploit:
