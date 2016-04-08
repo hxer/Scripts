@@ -15,11 +15,12 @@ import sys
 
 import requests
 
+from exploit import joomla
+
 reload(sys)
 sys.setdefaultencoding("utf-8")
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
-log = logging.getLogger(__name__)
 
 
 class Shadan(object):
@@ -47,10 +48,10 @@ class Shadan(object):
             resp = self.session.get(self.url, headers=headers)
             if resp.status_code != 200:
                 err_msg = "[-] response code is not 200"
-                log.error(err_msg)
+                logging.error(err_msg)
         except Exception as e:
             err_msg = "[-] visit shadan error: {}".format(e)
-            log.error(err_msg)
+            logging.error(err_msg)
 
     def login(self, user, passwd):
         headers = {
@@ -94,13 +95,13 @@ class Shadan(object):
             else:
                 err_msg = "[-] Login failed: "
                 err_msg += "{}".format(respjson['content'].encode('utf-8'))
-                log.error(err_msg)
+                logging.error(err_msg)
 
-    def search(self, keyword, pages):
+    def search(self, keyword, page):
         """
         params:
             keyword[str]: search keyword
-            pages[int]: pages of result
+            page[int]: page of result
         """
         headers = {
             "Accept": "application/json, text/javascript, */*; q=0.01",
@@ -117,46 +118,50 @@ class Shadan(object):
             "c": keyword,
             "q": 0,
             "clear": False,
-            "p": 1
+            "p": page
         }
 
-        # 0 denote fetch all pages
-        if pages == 0:
-            pages = 1000000
+        params = {
+            "info": json.dumps(info)
+        }
 
-        for p in xrange(1, pages+1):
-            info['p'] = p
-            params = {
-                "info": json.dumps(info)
-            }
+        # return the result
+        result = None
 
-            try:
-                resp = self.session.get(serch_url, headers=headers, params=params)
-                respjson = resp.json()
-                self.respjson = respjson
-            except Exception as e:
-                err_msg = "[-]: search {k} error: {e}".format(k=keyword, e=e)
-                log.error(err_msg)
-            else:
-                if respjson['type'] == 'success':
-                    if p == 1:
-                        result_num = int(respjson['result']['result']['recordNum'])
-                        print("[*] get {} records".format(result_num))
-                        if result_num == 0:
-                            break
+        try:
+            resp = self.session.get(serch_url, headers=headers, params=params)
+            respjson = resp.json()
+            self.respjson = respjson
+        except Exception as e:
+            err_msg = "[-]: search {k} error: {e}".format(k=keyword, e=e)
+            logging.error(err_msg)
+        else:
+            if respjson['type'] == 'success':
+                result_num = int(respjson['result']['result']['recordNum'])
+                if page == 1:
+                    print("[*] get {} records".format(result_num))
 
+                if result_num != 0:
                     # result is a list
                     result = respjson['result']['result']['data']
-                    print("[*] save page {} to file ...".format(p))
-                    self.savefile(keyword+'.txt', result)
 
-                    # has been fetched all result
-                    if p*10 > result_num:
-                        break
-                else:
-                    err_msg = "[-] search failed\n\t{}".format(resp.content)
-                    log.error(err_msg)
-        print("[+] search finished")
+                # has been fetched all result
+                if page*10 > result_num:
+                    result = None
+            else:
+                err_msg = "[-] search failed\n\t{}".format(resp.content)
+                logging.error(err_msg)
+
+        return result
+
+    def exploit(self, data):
+        joomla_rce = joomla.Joomla_rce()
+        for raw in data:
+            result = self.parse(raw)
+            if result:
+                url = result[0] + "://" + result[1]
+                joomla_rce.check(url)
+        joomla_rce.report()
 
     def savefile(self, filename, data):
         """
@@ -216,12 +221,31 @@ if __name__ == "__main__":
                 help="search keyword")
     parser.add_argument('-pg', '--pages', dest='pages', type=int, default=5,
                 help="fetch pages of result, 0 denote all pages, default is 5")
+    parser.add_argument('--exploit', dest='exploit', action='store_true',
+                help="so far, just support exploit joomla remote code exploit")
     args = parser.parse_args()
 
     username = args.uname
     password = args.passwd
     keyword = args.keyword
     pages = args.pages
+    exploit = args.exploit
 
     s = Shadan(username, password)
-    s.search(keyword, pages)
+
+    # 0 denote fetch all pages
+    if pages == 0:
+        pages = 1000000
+
+    for page in xrange(1, pages+1):
+        print("[*] save page {} to file ...".format(page))
+        result = s.search(keyword, page)
+        if result == None :
+            break
+
+        s.savefile(keyword+'.txt', result)
+
+        if exploit:
+            s.exploit(result)
+
+    print("[+] search finished")
